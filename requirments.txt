@@ -1,0 +1,7 @@
+Installation steps used for the project:
+
+1: Common packages installed for this project
+    fastapi
+    uvicorn[standard]
+    httpx2
+    pytest
