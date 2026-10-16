@@ -25,3 +25,11 @@ Health endpoint: http://127.0.0.1:8000/health
 
 Interactive documentation: http://127.0.0.1:8000/docs
 
+
+## 2026-10-16 — Telemetry API foundation
+
+- Added a versioned FastAPI telemetry endpoint.
+- Separated request/response schemas, route handling, and service logic.
+- Added tests for health, valid telemetry, invalid temperature, and unknown fields.
+- Persistence, MQTT ingestion, authentication, and risk analysis remain unimplemented.
+
