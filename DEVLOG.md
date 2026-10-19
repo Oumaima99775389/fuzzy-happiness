@@ -33,3 +33,30 @@ Interactive documentation: http://127.0.0.1:8000/docs
 - Added tests for health, valid telemetry, invalid temperature, and unknown fields.
 - Persistence, MQTT ingestion, authentication, and risk analysis remain unimplemented.
 
+
+## Telemetry API
+
+The Smart Transport Box backend exposes a local FastAPI interface.
+
+### Submit telemetry
+
+`POST /api/v1/telemetry`
+
+Accepts a device ID, journey ID, timestamp, temperature in °C, and vibration magnitude in g. Valid readings are stored in a local SQLite database.
+
+### Retrieve journey telemetry
+
+`GET /api/v1/journeys/{journey_id}/telemetry`
+
+Returns the readings recorded for the specified journey in timestamp order.
+
+### Current limitations
+
+- The API currently receives readings over HTTP.
+- MQTT ingestion from the ESP32 is not implemented yet.
+- Readings are stored locally in SQLite.
+- Authentication, access control, retention policies, and risk analysis are not implemented yet.
+- Prototype validation limits are not certified transport-safety thresholds.
+
+
+
