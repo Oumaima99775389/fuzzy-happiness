@@ -14,7 +14,9 @@ class TelemetryBase(BaseModel):
     """Shared configuration for telemetry models."""
 
     model_config = ConfigDict(extra="forbid")
-
+class ConditionAssessmentResponse(BaseModel):
+    status: str
+    reasons: list[str]
 
 class TelemetryRequest(TelemetryBase):
     """Validate incoming telemetry data."""
@@ -49,6 +51,7 @@ class TelemetryResponse(TelemetryBase):
     device_id: str
     journey_id: str
     timestamp: datetime
+    condition: ConditionAssessmentResponse
 
 
 class TelemetryResponse2(TelemetryBase):
@@ -60,6 +63,7 @@ class TelemetryResponse2(TelemetryBase):
     timestamp: datetime
     temperature_c: float
     vibration_g: float
+    condition: ConditionAssessmentResponse
 
 class TelemetryRecord(BaseModel):
     """A telemetry reading retrieved from local storage."""
@@ -70,3 +74,5 @@ class TelemetryRecord(BaseModel):
     timestamp: datetime
     temperature_c: float
     vibration_g: float
+
+

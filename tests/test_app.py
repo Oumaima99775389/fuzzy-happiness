@@ -205,3 +205,37 @@ def test_telemetry_can_be_filtered_by_device_and_journey(
     assert response.status_code == 422
 
 
+def test_telemetry_response_includes_normal_condition():
+    payload = {
+        "device_id": "box-001",
+        "journey_id": "journey-001",
+        "timestamp": "2026-10-21T08:30:00Z",
+        "temperature_c": 5.0,
+        "vibration_g": 0.12,
+    }
+
+    response = client.post("/api/v1/telemetry", json=payload)
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "stored"
+    assert data["condition"]["status"] == "NORMAL"
+    assert data["condition"]["reasons"]
+
+
+def test_telemetry_response_includes_temperature_warning():
+    payload = {
+        "device_id": "box-001",
+        "journey_id": "journey-001",
+        "timestamp": "2026-10-21T08:31:00Z",
+        "temperature_c": 9.0,
+        "vibration_g": 0.12,
+    }
+
+    response = client.post("/api/v1/telemetry", json=payload)
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["condition"]["status"] == "WARNING"
+    assert data["condition"]["reasons"]
+

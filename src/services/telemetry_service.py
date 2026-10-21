@@ -1,10 +1,11 @@
-
 from src.repositories import telemetry_repository
 from src.schemas.telemetry import (
+    ConditionAssessmentResponse,
     TelemetryRecord,
     TelemetryRequest,
     TelemetryResponse,
 )
+from src.services import condition_service
 
 
 def store_telemetry(
@@ -12,11 +13,19 @@ def store_telemetry(
 ) -> TelemetryResponse:
     telemetry_repository.save_telemetry(telemetry)
 
+    assessment = condition_service.evaluate_temperature(
+        telemetry.temperature_c
+    )
+
     return TelemetryResponse(
         status="stored",
         device_id=telemetry.device_id,
         journey_id=telemetry.journey_id,
         timestamp=telemetry.timestamp,
+        condition=ConditionAssessmentResponse(
+            status=assessment.status,
+            reasons=assessment.reasons,
+        ),
     )
 
 
@@ -59,3 +68,23 @@ def list_device_journey_telemetry(
         offset=offset,
     )
     return [TelemetryRecord(**row) for row in rows]
+
+def store_telemetry(
+    telemetry: TelemetryRequest,
+) -> TelemetryResponse:
+    telemetry_repository.save_telemetry(telemetry)
+
+    assessment = condition_service.evaluate_temperature(
+        telemetry.temperature_c
+    )
+
+    return TelemetryResponse(
+        status="stored",
+        device_id=telemetry.device_id,
+        journey_id=telemetry.journey_id,
+        timestamp=telemetry.timestamp,
+        condition=ConditionAssessmentResponse(
+            status=assessment.status,
+            reasons=assessment.reasons,
+        ),
+    )
