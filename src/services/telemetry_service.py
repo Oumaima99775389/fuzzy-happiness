@@ -29,6 +29,22 @@ def store_telemetry(
     )
 
 
+def _build_telemetry_record(row: dict) -> TelemetryRecord:
+    """Convert a database row into a complete telemetry record."""
+
+    assessment = condition_service.evaluate_temperature(
+        row["temperature_c"]
+    )
+
+    return TelemetryRecord(
+        **row,
+        condition=ConditionAssessmentResponse(
+            status=assessment.status,
+            reasons=assessment.reasons,
+        ),
+    )
+
+
 def list_journey_telemetry(
     journey_id: str,
     limit: int = 100,
@@ -39,7 +55,7 @@ def list_journey_telemetry(
         limit=limit,
         offset=offset,
     )
-    return [TelemetryRecord(**row) for row in rows]
+    return [_build_telemetry_record(row) for row in rows]
 
 
 def list_device_telemetry(
@@ -52,7 +68,7 @@ def list_device_telemetry(
         limit=limit,
         offset=offset,
     )
-    return [TelemetryRecord(**row) for row in rows]
+    return [_build_telemetry_record(row) for row in rows]
 
 
 def list_device_journey_telemetry(
@@ -67,24 +83,4 @@ def list_device_journey_telemetry(
         limit=limit,
         offset=offset,
     )
-    return [TelemetryRecord(**row) for row in rows]
-
-def store_telemetry(
-    telemetry: TelemetryRequest,
-) -> TelemetryResponse:
-    telemetry_repository.save_telemetry(telemetry)
-
-    assessment = condition_service.evaluate_temperature(
-        telemetry.temperature_c
-    )
-
-    return TelemetryResponse(
-        status="stored",
-        device_id=telemetry.device_id,
-        journey_id=telemetry.journey_id,
-        timestamp=telemetry.timestamp,
-        condition=ConditionAssessmentResponse(
-            status=assessment.status,
-            reasons=assessment.reasons,
-        ),
-    )
+    return [_build_telemetry_record(row) for row in rows]

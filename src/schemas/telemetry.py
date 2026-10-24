@@ -74,5 +74,6 @@ class TelemetryRecord(BaseModel):
     timestamp: datetime
     temperature_c: float
     vibration_g: float
+    condition: ConditionAssessmentResponse
 
 

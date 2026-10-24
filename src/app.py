@@ -15,3 +15,4 @@ app.include_router(telemetry_router)  # includes the telemetry router in the app
 def health_check():
      return {"status": "ok"}
 # Returning a Python dictionary makes FastAPI return a JSON response.
+
