@@ -3,6 +3,7 @@ from fastapi.testclient import TestClient
 from pydantic import ValidationError
 from src.schemas.telemetry import TelemetryRequest
 from src.repositories import telemetry_repository
+from src.repositories import condition_event_repository
 
 
 from src.app import app
@@ -239,3 +240,115 @@ def test_telemetry_response_includes_temperature_warning():
     assert data["condition"]["status"] == "WARNING"
     assert data["condition"]["reasons"]
 
+@pytest.fixture(autouse=True)
+def use_test_database(monkeypatch, tmp_path):
+    """Give each test its own isolated SQLite database."""
+    db_path = tmp_path / "test_telemetry.db"
+
+    monkeypatch.setattr(
+        telemetry_repository,
+        "DB_PATH",
+        db_path,
+    )
+    monkeypatch.setattr(
+        condition_event_repository,
+        "DB_PATH",
+        db_path,
+    )
+
+    # Create both tables in the temporary database.
+    telemetry_repository.initialize_database()
+    condition_event_repository.initialize_condition_event_table()
+
+def test_pagination_offset_skips_existing_readings():
+    payloads = [
+        {
+            **VALID_PAYLOAD,
+            "timestamp": "2026-10-17T08:30:00Z",
+            "temperature_c": 4.0,
+        },
+        {
+            **VALID_PAYLOAD,
+            "timestamp": "2026-10-17T08:31:00Z",
+            "temperature_c": 5.0,
+        },
+        {
+            **VALID_PAYLOAD,
+            "timestamp": "2026-10-17T08:32:00Z",
+            "temperature_c": 6.0,
+        },
+    ]
+
+    for payload in payloads:
+        response = client.post("/api/v1/telemetry", json=payload)
+        assert response.status_code == 200
+
+    response = client.get(
+        "/api/v1/journeys/journey-001/telemetry?limit=1&offset=1"
+    )
+
+    assert response.status_code == 200
+    readings = response.json()
+    assert len(readings) == 1
+    assert readings[0]["temperature_c"] == 5.0
+
+
+def test_empty_journey_returns_empty_list():
+    response = client.get(
+        "/api/v1/journeys/nonexistent-journey/telemetry"
+    )
+
+    assert response.status_code == 200
+    assert response.json() == []
+
+
+def test_high_temperature_creates_condition_event():
+    payload = {
+        **VALID_PAYLOAD,
+        "device_id": "esp32-box-high",
+        "journey_id": "journey-high",
+        "temperature_c": 10.0,
+    }
+
+    response = client.post("/api/v1/telemetry", json=payload)
+
+    assert response.status_code == 200
+
+    events = condition_event_repository.list_events(
+        device_id="esp32-box-high",
+        journey_id="journey-high",
+    )
+
+    assert len(events) == 1
+    assert events[0].event_type == "TEMPERATURE_HIGH"
+    assert events[0].status == "ACTIVE"
+
+
+def test_normal_temperature_closes_active_condition_event():
+    high_payload = {
+        **VALID_PAYLOAD,
+        "device_id": "esp32-box-close",
+        "journey_id": "journey-close",
+        "temperature_c": 10.0,
+    }
+
+    normal_payload = {
+        **high_payload,
+        "temperature_c": 5.0,
+        "timestamp": "2026-10-17T09:30:00Z",
+    }
+
+    client.post("/api/v1/telemetry", json=high_payload)
+    response = client.post("/api/v1/telemetry", json=normal_payload)
+
+    assert response.status_code == 200
+
+    events = condition_event_repository.list_events(
+        device_id="esp32-box-close",
+        journey_id="journey-close",
+    )
+
+    assert len(events) == 1
+    assert events[0].event_type == "TEMPERATURE_HIGH"
+    assert events[0].status == "CLOSED"
+    assert events[0].ended_at is not None

@@ -108,3 +108,44 @@ def test_high_to_low_transition_closes_high_event(
     assert high_event.status == "CLOSED"
     assert high_event.ended_at == later
     assert low_event.status == "ACTIVE"
+
+
+def test_naive_timestamp_is_rejected(event_database):
+    naive_time = datetime(2026, 10, 24, 10, 0)
+
+    with pytest.raises(ValueError, match="timezone-aware"):
+        service.process_temperature_reading(
+            "box-001",
+            "journey-001",
+            9.0,
+            naive_time,
+        )
+
+
+def test_normal_reading_for_another_device_does_not_close_event(
+    event_database, observed_at
+):
+    # Box 001 experiences an unsafe high temperature.
+    service.process_temperature_reading(
+        "box-001",
+        "journey-001",
+        9.0,
+        observed_at,
+    )
+
+    # Box 002 is normal, but its reading must not affect box 001.
+    later = datetime(2026, 10, 24, 10, 1, tzinfo=timezone.utc)
+    service.process_temperature_reading(
+        "box-002",
+        "journey-001",
+        5.0,
+        later,
+    )
+
+    events = repository.list_events("box-001", "journey-001")
+
+    assert len(events) == 1
+    assert events[0].event_type == "TEMPERATURE_HIGH"
+    assert events[0].status == "ACTIVE"
+    assert events[0].started_at == observed_at
+

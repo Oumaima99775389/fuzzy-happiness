@@ -6,17 +6,30 @@ from src.schemas.telemetry import (
     TelemetryResponse,
 )
 from src.services import condition_service
+from src.services import condition_event_service
+
 
 
 def store_telemetry(
     telemetry: TelemetryRequest,
 ) -> TelemetryResponse:
+    # 1. Persist the raw reading first.
     telemetry_repository.save_telemetry(telemetry)
 
+    # 2. Evaluate the temperature for the API response.
     assessment = condition_service.evaluate_temperature(
         telemetry.temperature_c
     )
 
+    # 3. Create, maintain, or close temperature events.
+    condition_event_service.process_temperature_reading(
+        device_id=telemetry.device_id,
+        journey_id=telemetry.journey_id,
+        temperature_c=telemetry.temperature_c,
+        observed_at=telemetry.timestamp,
+    )
+
+    # 4. Return the existing API response structure.
     return TelemetryResponse(
         status="stored",
         device_id=telemetry.device_id,
@@ -27,7 +40,6 @@ def store_telemetry(
             reasons=assessment.reasons,
         ),
     )
-
 
 def _build_telemetry_record(row: dict) -> TelemetryRecord:
     """Convert a database row into a complete telemetry record."""
