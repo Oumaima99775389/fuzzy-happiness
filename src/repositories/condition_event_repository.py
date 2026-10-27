@@ -1,7 +1,9 @@
 
 import sqlite3
+from contextlib import closing, contextmanager
 from datetime import datetime
 from pathlib import Path
+from collections.abc import Iterator
 
 from src.schemas.condition_event import ConditionEvent
 
@@ -17,8 +19,22 @@ def get_connection() -> sqlite3.Connection:
     return connection
 
 
+@contextmanager
+def _use_connection(
+    connection: sqlite3.Connection | None,
+) -> Iterator[sqlite3.Connection]:
+    """Reuse a supplied connection or manage a standalone connection."""
+    if connection is not None:
+        yield connection
+        return
+
+    with closing(get_connection()) as owned_connection:
+        with owned_connection:
+            yield owned_connection
+
+
 def initialize_condition_event_table() -> None:
-    with get_connection() as connection:
+    with _use_connection(None) as connection:
         connection.execute(
             """
             CREATE TABLE IF NOT EXISTS condition_events (
@@ -38,13 +54,33 @@ def initialize_condition_event_table() -> None:
         )
 
 
+def _row_to_event(row: sqlite3.Row | None) -> ConditionEvent | None:
+    if row is None:
+        return None
+
+    return ConditionEvent(
+        id=row["id"],
+        device_id=row["device_id"],
+        journey_id=row["journey_id"],
+        event_type=row["event_type"],
+        started_at=datetime.fromisoformat(row["started_at"]),
+        ended_at=(
+            datetime.fromisoformat(row["ended_at"])
+            if row["ended_at"] is not None
+            else None
+        ),
+        status=row["status"],
+    )
+
+
 def find_active_event(
     device_id: str,
     journey_id: str,
     event_type: str,
+    connection: sqlite3.Connection | None = None,
 ) -> sqlite3.Row | None:
-    with get_connection() as connection:
-        return connection.execute(
+    with _use_connection(connection) as db:
+        return db.execute(
             """
             SELECT *
             FROM condition_events
@@ -64,9 +100,10 @@ def create_event(
     journey_id: str,
     event_type: str,
     started_at: datetime,
+    connection: sqlite3.Connection | None = None,
 ) -> ConditionEvent:
-    with get_connection() as connection:
-        cursor = connection.execute(
+    with _use_connection(connection) as db:
+        cursor = db.execute(
             """
             INSERT INTO condition_events (
                 device_id,
@@ -85,21 +122,30 @@ def create_event(
                 started_at.isoformat(),
             ),
         )
+
         event_id = cursor.lastrowid
+        event = _row_to_event(
+            db.execute(
+                "SELECT * FROM condition_events WHERE id = ?",
+                (event_id,),
+            ).fetchone()
+        )
 
-    event = get_event_by_id(event_id)
-    if event is None:
-        raise RuntimeError("Created condition event could not be retrieved.")
+        if event is None:
+            raise RuntimeError(
+                "Created condition event could not be retrieved."
+            )
 
-    return event
+        return event
 
 
 def close_event(
     event_id: int,
     ended_at: datetime,
+    connection: sqlite3.Connection | None = None,
 ) -> ConditionEvent | None:
-    with get_connection() as connection:
-        connection.execute(
+    with _use_connection(connection) as db:
+        db.execute(
             """
             UPDATE condition_events
             SET ended_at = ?, status = 'CLOSED'
@@ -108,32 +154,25 @@ def close_event(
             (ended_at.isoformat(), event_id),
         )
 
-    return get_event_by_id(event_id)
-
-
-def get_event_by_id(event_id: int) -> ConditionEvent | None:
-    with get_connection() as connection:
-        row = connection.execute(
+        row = db.execute(
             "SELECT * FROM condition_events WHERE id = ?",
             (event_id,),
         ).fetchone()
 
-    if row is None:
-        return None
+        return _row_to_event(row)
 
-    return ConditionEvent(
-        id=row["id"],
-        device_id=row["device_id"],
-        journey_id=row["journey_id"],
-        event_type=row["event_type"],
-        started_at=datetime.fromisoformat(row["started_at"]),
-        ended_at=(
-            datetime.fromisoformat(row["ended_at"])
-            if row["ended_at"] is not None
-            else None
-        ),
-        status=row["status"],
-    )
+
+def get_event_by_id(
+    event_id: int,
+    connection: sqlite3.Connection | None = None,
+) -> ConditionEvent | None:
+    with _use_connection(connection) as db:
+        row = db.execute(
+            "SELECT * FROM condition_events WHERE id = ?",
+            (event_id,),
+        ).fetchone()
+
+        return _row_to_event(row)
 
 
 def list_events(
@@ -142,7 +181,7 @@ def list_events(
     limit: int = 100,
     offset: int = 0,
 ) -> list[ConditionEvent]:
-    with get_connection() as connection:
+    with _use_connection(None) as connection:
         rows = connection.execute(
             """
             SELECT *
@@ -154,22 +193,38 @@ def list_events(
             (device_id, journey_id, limit, offset),
         ).fetchall()
 
-    return [
-        ConditionEvent(
-            id=row["id"],
-            device_id=row["device_id"],
-            journey_id=row["journey_id"],
-            event_type=row["event_type"],
-            started_at=datetime.fromisoformat(row["started_at"]),
-            ended_at=(
-                datetime.fromisoformat(row["ended_at"])
-                if row["ended_at"] is not None
-                else None
-            ),
-            status=row["status"],
-        )
-        for row in rows
-    ]
+    return [_row_to_event(row) for row in rows if row is not None]
 
 
 initialize_condition_event_table()
+
+
+def get_journey_event_summary(journey_id: str) -> dict[str, int]:
+    with _use_connection(None) as connection:
+        row = connection.execute(
+            """
+            SELECT
+                COUNT(CASE
+                    WHEN event_type = 'TEMPERATURE_HIGH'
+                    THEN 1
+                END) AS high_temperature,
+                COUNT(CASE
+                    WHEN event_type = 'TEMPERATURE_LOW'
+                    THEN 1
+                END) AS low_temperature,
+                COUNT(CASE
+                    WHEN status = 'ACTIVE'
+                    THEN 1
+                END) AS active
+            FROM condition_events
+            WHERE journey_id = ?
+            """,
+            (journey_id,),
+        ).fetchone()
+
+    return {
+        "high_temperature": row["high_temperature"],
+        "low_temperature": row["low_temperature"],
+        "active": row["active"],
+    }
+

@@ -33,30 +33,59 @@ def initialize_database() -> None:
         )
 
 # Saves a telemetry record to the database and returns the ID of the inserted record.
-def save_telemetry(telemetry: TelemetryRequest) -> int:
-    initialize_database()
 
-    with get_connection() as connection:
-        cursor = connection.execute(
-            """
-            INSERT INTO telemetry (
-                device_id,
-                journey_id,
-                timestamp,
-                temperature_c,
-                vibration_g
+def save_telemetry(
+    telemetry: TelemetryRequest,
+    connection: sqlite3.Connection | None = None,
+) -> int:
+    # If no connection was supplied, this function manages its own.
+    if connection is None:
+        initialize_database()
+
+        with get_connection() as owned_connection:
+            cursor = owned_connection.execute(
+                """
+                INSERT INTO telemetry (
+                    device_id,
+                    journey_id,
+                    timestamp,
+                    temperature_c,
+                    vibration_g
+                )
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (
+                    telemetry.device_id,
+                    telemetry.journey_id,
+                    telemetry.timestamp.isoformat(),
+                    telemetry.temperature_c,
+                    telemetry.vibration_g,
+                ),
             )
-            VALUES (?, ?, ?, ?, ?)
-            """,
-            (
-                telemetry.device_id,
-                telemetry.journey_id,
-                telemetry.timestamp.isoformat(),
-                telemetry.temperature_c,
-                telemetry.vibration_g,
-            ),
+            return cursor.lastrowid
+
+    # If a connection was supplied, use it without committing or closing it.
+    cursor = connection.execute(
+        """
+        INSERT INTO telemetry (
+            device_id,
+            journey_id,
+            timestamp,
+            temperature_c,
+            vibration_g
         )
-        return cursor.lastrowid
+        VALUES (?, ?, ?, ?, ?)
+        """,
+        (
+            telemetry.device_id,
+            telemetry.journey_id,
+            telemetry.timestamp.isoformat(),
+            telemetry.temperature_c,
+            telemetry.vibration_g,
+        ),
+    )
+    return cursor.lastrowid
+
     
 # Retrieves telemetry records for a specific journey from the database and returns them as a list of dictionaries.
 def get_telemetry_for_journey(
@@ -130,6 +159,52 @@ def get_telemetry_for_device_journey(
         ).fetchall()
 
     return [dict(row) for row in rows]
+
+# Retrieves a summary of telemetry data for a specific journey, including total readings, min/max/average temperature and vibration.
+def get_journey_summary(journey_id: str) -> dict:
+    initialize_database()
+
+    with get_connection() as connection:
+        row = connection.execute(
+            """
+            SELECT
+                COUNT(*) AS total_readings,
+                MIN(temperature_c) AS min_temperature,
+                MAX(temperature_c) AS max_temperature,
+                AVG(temperature_c) AS average_temperature,
+                MIN(vibration_g) AS min_vibration,
+                MAX(vibration_g) AS max_vibration,
+                AVG(vibration_g) AS average_vibration
+            FROM telemetry
+            WHERE journey_id = ?
+            """,
+            (journey_id,),
+        ).fetchone()
+
+    return dict(row)
+
+def get_journey_summary(journey_id: str) -> dict:
+    initialize_database()
+
+    with get_connection() as connection:
+        row = connection.execute(
+            """
+            SELECT
+                COUNT(*) AS total_readings,
+                MIN(temperature_c) AS min_temperature,
+                MAX(temperature_c) AS max_temperature,
+                AVG(temperature_c) AS average_temperature,
+                MIN(vibration_g) AS min_vibration,
+                MAX(vibration_g) AS max_vibration,
+                AVG(vibration_g) AS average_vibration
+            FROM telemetry
+            WHERE journey_id = ?
+            """,
+            (journey_id,),
+        ).fetchone()
+
+    return dict(row)
+
 
 
 

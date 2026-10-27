@@ -7,6 +7,8 @@ from src.schemas.telemetry import (
     TelemetryResponse,
 )
 from src.services import telemetry_service
+from src.schemas.journey_summary import JourneySummary
+from src.services import journey_summary_service
 
 router = APIRouter(prefix="/api/v1", tags=["Telemetry"])
 
@@ -66,3 +68,9 @@ def get_device_journey_telemetry(
         limit=limit,
         offset=offset,
     )
+@router.get(
+    "/journeys/{journey_id}/summary",
+    response_model=JourneySummary,
+)
+def get_journey_summary(journey_id: str) -> JourneySummary:
+    return journey_summary_service.get_journey_summary(journey_id)

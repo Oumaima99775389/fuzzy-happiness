@@ -4,6 +4,7 @@ from pydantic import ValidationError
 from src.schemas.telemetry import TelemetryRequest
 from src.repositories import telemetry_repository
 from src.repositories import condition_event_repository
+from src.schemas.journey_summary import JourneySummary , TemperatureSummary , VibrationSummary , EventSummary
 
 
 from src.app import app
@@ -352,3 +353,50 @@ def test_normal_temperature_closes_active_condition_event():
     assert events[0].event_type == "TEMPERATURE_HIGH"
     assert events[0].status == "CLOSED"
     assert events[0].ended_at is not None
+
+    from src.schemas.journey_summary import (
+    EventSummary,
+    JourneySummary,
+    TemperatureSummary,
+    VibrationSummary,
+)
+from src.services import journey_summary_service
+
+
+def test_get_journey_summary(monkeypatch):
+    expected_summary = JourneySummary(
+        journey_id="journey-001",
+        total_readings=2,
+        temperature=TemperatureSummary(
+            min=4.0,
+            max=6.0,
+            average=5.0,
+        ),
+        vibration=VibrationSummary(
+            min=0.1,
+            max=0.3,
+            average=0.2,
+        ),
+        events=EventSummary(
+            high_temperature=1,
+            low_temperature=0,
+            active=1,
+        ),
+    )
+
+    def fake_get_journey_summary(journey_id):
+        assert journey_id == "journey-001"
+        return expected_summary
+
+    monkeypatch.setattr(
+        journey_summary_service,
+        "get_journey_summary",
+        fake_get_journey_summary,
+    )
+
+    response = client.get(
+        "/api/v1/journeys/journey-001/summary"
+    )
+
+    assert response.status_code == 200
+    assert response.json() == expected_summary.model_dump(mode="json")
