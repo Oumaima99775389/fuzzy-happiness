@@ -7,21 +7,36 @@ from src.schemas.telemetry import (
 )
 from src.services import condition_service
 from src.services import condition_event_service
+import logging
+from src.repositories import mongodb_repository
 
+logger = logging.getLogger(__name__)
 
 
 def store_telemetry(
     telemetry: TelemetryRequest,
 ) -> TelemetryResponse:
-    # 1. Persist the raw reading first.
-    telemetry_repository.save_telemetry(telemetry)
+    # 1. Save the reading locally first.
+    sqlite_id = telemetry_repository.save_telemetry(telemetry)
 
-    # 2. Evaluate the temperature for the API response.
+    # 2. Try to copy the reading to MongoDB.
+    try:
+        mongodb_repository.save_telemetry(
+            telemetry,
+            sqlite_id=sqlite_id,
+        )
+    except Exception:
+        logger.exception(
+            "MongoDB sync failed for SQLite telemetry ID %s",
+            sqlite_id,
+        )
+
+    # 3. Evaluate the temperature.
     assessment = condition_service.evaluate_temperature(
         telemetry.temperature_c
     )
 
-    # 3. Create, maintain, or close temperature events.
+    # 4. Process temperature events.
     condition_event_service.process_temperature_reading(
         device_id=telemetry.device_id,
         journey_id=telemetry.journey_id,
@@ -29,7 +44,7 @@ def store_telemetry(
         observed_at=telemetry.timestamp,
     )
 
-    # 4. Return the existing API response structure.
+    # 5. Return the existing API response.
     return TelemetryResponse(
         status="stored",
         device_id=telemetry.device_id,
