@@ -1,4 +1,5 @@
 
+import sqlite3
 from datetime import datetime
 
 from src.repositories import condition_event_repository as repository
@@ -14,8 +15,9 @@ def process_temperature_reading(
     journey_id: str,
     temperature_c: float,
     observed_at: datetime,
+    connection: sqlite3.Connection | None = None,
 ) -> list[ConditionEvent]:
-    """Update condition events based on a new temperature reading."""
+    """Update temperature events based on a new reading."""
 
     if observed_at.tzinfo is None or observed_at.utcoffset() is None:
         raise ValueError("observed_at must be timezone-aware.")
@@ -35,11 +37,16 @@ def process_temperature_reading(
     # Close an event of the opposite type if the condition changes.
     if opposite_type is not None:
         opposite_event = repository.find_active_event(
-            device_id, journey_id, opposite_type
+            device_id,
+            journey_id,
+            opposite_type,
+            connection=connection,
         )
         if opposite_event is not None:
             closed_event = repository.close_event(
-                opposite_event["id"], observed_at
+                opposite_event["id"],
+                observed_at,
+                connection=connection,
             )
             if closed_event is not None:
                 updated_events.append(closed_event)
@@ -48,11 +55,16 @@ def process_temperature_reading(
     if current_type is None:
         for event_type in ("TEMPERATURE_HIGH", "TEMPERATURE_LOW"):
             active_event = repository.find_active_event(
-                device_id, journey_id, event_type
+                device_id,
+                journey_id,
+                event_type,
+                connection=connection,
             )
             if active_event is not None:
                 closed_event = repository.close_event(
-                    active_event["id"], observed_at
+                    active_event["id"],
+                    observed_at,
+                    connection=connection,
                 )
                 if closed_event is not None:
                     updated_events.append(closed_event)
@@ -61,13 +73,20 @@ def process_temperature_reading(
 
     # Reuse the active event instead of creating duplicates.
     active_event = repository.find_active_event(
-        device_id, journey_id, current_type
+        device_id,
+        journey_id,
+        current_type,
+        connection=connection,
     )
 
     if active_event is not None:
-        return updated_events + [
-            repository.get_event_by_id(active_event["id"])
-        ] if repository.get_event_by_id(active_event["id"]) is not None else updated_events
+        existing_event = repository.get_event_by_id(
+            active_event["id"],
+            connection=connection,
+        )
+        return updated_events + (
+            [existing_event] if existing_event is not None else []
+        )
 
     # No active event exists, so start a new incident.
     new_event = repository.create_event(
@@ -75,6 +94,7 @@ def process_temperature_reading(
         journey_id=journey_id,
         event_type=current_type,
         started_at=observed_at,
+        connection=connection,
     )
     updated_events.append(new_event)
 
